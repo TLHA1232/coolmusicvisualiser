@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Vibrant Audio Visualizer - TLHA1232</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400&display=swap" rel="stylesheet">
+    <style>
+        /* --- Basic Reset & Full Screen --- */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100vw; height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(45deg, #05080a, #0a0d12, #05080a);
+            background-size: 400% 400%;
+            animation: gradientBG 25s ease infinite;
+            color: #e0e0e0;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-weight: 300;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* --- Canvas --- */
+        #visualizerCanvas {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 1;
+            filter: saturate(1.1) contrast(1.05); /* Kept from previous */
+        }
+
+        /* --- Upload Prompt --- */
+        #uploadPrompt {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 11; padding: 30px 45px;
+            background: linear-gradient(145deg, rgba(45, 45, 65, 0.88), rgba(30, 30, 50, 0.85));
+            border-radius: 20px;
+            cursor: pointer; text-align: center; font-size: 1.2em;
+            color: #b8d8f8;
+            border: 1px solid rgba(184, 216, 248, 0.25);
+            transition: opacity 0.5s ease, transform 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.3);
+            display: flex; flex-direction: column; align-items: center; gap: 15px;
+        }
+        #uploadPrompt:hover {
+             transform: translate(-50%, -50%) scale(1.03);
+             background: linear-gradient(145deg, rgba(55, 55, 75, 0.92), rgba(40, 40, 60, 0.90));
+             box-shadow: 0 8px 35px rgba(120, 190, 255, 0.15);
+             border-color: rgba(184, 216, 248, 0.4);
+        }
+        #uploadPrompt.hidden { opacity: 0; pointer-events: none; }
+        #fileInput { display: none; }
+        #uploadPrompt::before { /* Upload Icon */
+            content: ''; display: block; width: 40px; height: 40px;
+            background-color: #b8d8f8;
+            mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>') no-repeat center center;
+            mask-size: contain; opacity: 0.8; transition: opacity 0.3s ease;
+        }
+        #uploadPrompt:hover::before { opacity: 1; }
+
+        /* --- Controls Container --- */
+        #controlsContainer {
+            position: fixed;
+            bottom: 25px; /* Base position */
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 60px); /* Responsive width */
+            max-width: 600px; /* Max width for large screens */
+            z-index: 10;
+            display: flex;
+            flex-direction: column; /* Stack progress and buttons */
+            align-items: center;
+            gap: 15px; /* Space between progress and button row */
+            opacity: 0;
+            transition: opacity 0.5s ease 0.1s; /* Fade in slightly delayed */
+            pointer-events: none; /* Allow clicks through container initially */
+        }
+        #controlsContainer.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* --- Progress Bar Area --- */
+        #progressArea {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 15px;
+            background: rgba(30, 30, 50, 0.75);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border-radius: 25px; /* Consistent rounding */
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        #progressBar {
+            flex-grow: 1; /* Take available space */
+            height: 6px;
+            cursor: pointer;
+            appearance: none; -webkit-appearance: none;
+            background: rgba(255, 255, 255, 0.15); /* Dim track */
+            border-radius: 3px;
+            outline: none;
+            transition: background 0.2s ease;
+            /* Background fill handled by JS */
+            background: linear-gradient(to right, #8ab4f8 0%, #8ab4f8 var(--progress, 0%), rgba(255, 255, 255, 0.15) var(--progress, 0%), rgba(255, 255, 255, 0.15) 100%);
+        }
+        #progressBar::-webkit-slider-thumb {
+            appearance: none; -webkit-appearance: none;
+            width: 16px; height: 16px;
+            background: #e0e0e0; border-radius: 50%;
+            cursor: pointer; border: none;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        #progressBar::-webkit-slider-thumb:hover { background: #ffffff; transform: scale(1.15); }
+        #progressBar::-moz-range-thumb { /* Firefox */
+            width: 16px; height: 16px; background: #e0e0e0; border-radius: 50%;
+            cursor: pointer; border: none; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        #progressBar::-moz-range-thumb:hover { background: #ffffff; transform: scale(1.15); }
+         #progressBar:disabled { cursor: not-allowed; opacity: 0.5; }
+         #progressBar:disabled::-webkit-slider-thumb { transform: scale(1); } /* Don't scale when disabled */
+         #progressBar:disabled::-moz-range-thumb { transform: scale(1); }
+
+        .time-display {
+            font-size: 0.8em;
+            color: #c0c0d0;
+            min-width: 40px; /* Prevent layout shift */
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        /* --- Button Row (Play/Pause & Volume) --- */
+        #buttonRow {
+             width: 100%;
+             display: flex;
+             justify-content: space-between; /* Push elements to ends */
+             align-items: center;
+             padding: 0 5px; /* Small padding to prevent edge collision */
+        }
+
+        /* --- Custom Controls Base Styling (Applies to Play/Pause and Volume) --- */
+        .control-button, .volume-container {
+            /* Position is now relative within #buttonRow */
+            z-index: 10;
+            background: rgba(30, 30, 50, 0.75);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+            display: flex; justify-content: center; align-items: center;
+            transition: background-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        /* Removed opacity transitions here - parent handles fade */
+        .control-button:hover, .volume-container:hover {
+             background-color: rgba(45, 45, 65, 0.85);
+             transform: scale(1.05);
+             box-shadow: 0 6px 25px rgba(120, 190, 255, 0.1);
+        }
+         .volume-container:hover { transform: none; }
+
+        /* --- Play/Pause Button --- */
+        #playPauseButton {
+            /* No specific position needed */
+            width: 55px; height: 55px;
+            border-radius: 50%;
+            border: none; padding: 0; color: #b8d8f8;
+        }
+        #playPauseButton svg { width: 24px; height: 24px; fill: currentColor; display: block; transition: transform 0.2s ease; }
+        #playPauseButton:active { transform: scale(0.95); background-color: rgba(50, 50, 70, 0.9); }
+        #playPauseButton:active svg { transform: scale(0.9); }
+
+        /* --- Volume Control --- */
+        .volume-container {
+            /* No specific position needed */
+            width: 190px; height: 50px;
+            border-radius: 25px;
+            padding: 0 18px; cursor: default;
+        }
+
+        /* --- BEAUTIFUL Volume Slider --- */
+        #volumeSlider {
+            --value: 80%; /* Default, updated by JS */
+            flex-grow: 1; height: 6px; cursor: pointer;
+            appearance: none; -webkit-appearance: none;
+            /* Dynamic background fill */
+            background: linear-gradient(to right, #8ab4f8 0%, #b8d8f8 var(--value), rgba(255, 255, 255, 0.15) var(--value), rgba(255, 255, 255, 0.15) 100%);
+            border-radius: 3px;
+            outline: none; margin: 0 12px;
+            transition: box-shadow 0.2s ease, background 0.1s linear; /* Smooth background change */
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+        }
+        #volumeSlider::-webkit-slider-thumb {
+            appearance: none; -webkit-appearance: none;
+            width: 18px; height: 18px; /* Slightly larger */
+            background: #e0e0e0; border-radius: 50%;
+            cursor: pointer; border: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.45); /* More pronounced shadow */
+            transition: background-color 0.2s ease, transform 0.2s ease;
+            position: relative; /* For potential future pseudo elements */
+            z-index: 2; /* Ensure thumb is above track fill */
+        }
+        #volumeSlider::-webkit-slider-thumb:hover { background: #ffffff; transform: scale(1.15); }
+        #volumeSlider::-moz-range-thumb { /* Firefox */
+            width: 18px; height: 18px; background: #e0e0e0; border-radius: 50%;
+            cursor: pointer; border: none; box-shadow: 0 2px 5px rgba(0,0,0,0.45);
+            transition: background-color 0.2s ease, transform 0.2s ease; z-index: 2;
+        }
+        #volumeSlider::-moz-range-thumb:hover { background: #ffffff; transform: scale(1.15); }
+        .volume-container svg { width: 20px; height: 20px; fill: #b8d8f8; flex-shrink: 0; opacity: 0.8; transition: opacity 0.2s ease;}
+        .volume-container:hover svg { opacity: 1; }
+
+
+        /* --- File Name Display --- */
+        #fileName {
+            position: fixed; top: 25px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 9;
+            background-color: rgba(25, 25, 45, 0.6);
+            backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+            color: #c0c0d0; padding: 6px 15px; border-radius: 15px;
+            font-size: 0.85em; max-width: 60%;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            text-align: center; opacity: 0;
+            transition: opacity 0.6s ease 0.4s, background-color 0.3s ease;
+            pointer-events: none;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex; align-items: center; gap: 8px;
+        }
+        #fileName::before { /* Music Icon */
+            content: ''; display: inline-block; width: 14px; height: 14px;
+            background-color: #c0c0d0;
+            mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55c-2.21 0-4 1.79-4 4s1.79 4 4 4s4-1.79 4-4V7h4V3h-6z"/></svg>') no-repeat center center;
+            mask-size: contain; opacity: 0.7; flex-shrink: 0;
+        }
+        #fileName.visible { opacity: 0.8; }
+
+        /* --- GitHub Footer Info --- */
+        #footerInfo {
+             position: fixed; bottom: 10px; /* Position below controls area */
+             left: 50%; transform: translateX(-50%);
+             z-index: 9; display: flex; align-items: center; gap: 8px;
+             opacity: 0; transition: opacity 0.6s ease 0.5s;
+             pointer-events: none;
+        }
+        #footerInfo.visible { opacity: 0.5; pointer-events: auto; }
+         #footerInfo a {
+             color: #8a8a9c; text-decoration: none; display: flex; align-items: center;
+             transition: color 0.2s ease, transform 0.2s ease;
+         }
+         #footerInfo a:hover { color: #b0b0c0; transform: translateY(-1px); }
+         #footerInfo svg { width: 18px; height: 18px; fill: currentColor; margin-right: 5px; opacity: 0.8; }
+         #footerInfo span { font-size: 0.8em; font-weight: 300; letter-spacing: 0.8px; }
+
+         /* --- Hide the actual audio element --- */
+         #audioPlayer { display: none; }
+
+    </style>
+</head>
+<body>
+    <canvas id="visualizerCanvas"></canvas>
+
+    <label for="fileInput" id="uploadPrompt">
+        <span>Click or Drop MP3 Here</span>
+    </label>
+    <input type="file" id="fileInput" accept="audio/mpeg" />
+
+    <audio id="audioPlayer"></audio>
+
+    <!-- Central Controls Container -->
+    <div id="controlsContainer">
+        <!-- Progress Bar Area -->
+        <div id="progressArea">
+            <span id="currentTime" class="time-display">0:00</span>
+            <input type="range" id="progressBar" min="0" max="100" value="0" step="0.1" disabled aria-label="Seek">
+            <span id="totalDuration" class="time-display">0:00</span>
+        </div>
+        <!-- Button Row -->
+        <div id="buttonRow">
+            <button id="playPauseButton" aria-label="Play" class="control-button">
+                <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                <svg id="pauseIcon" viewBox="0 0 24 24" style="display: none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+            </button>
+            <div id="volumeControlContainer" class="volume-container">
+                 <svg id="volumeIcon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"></path></svg>
+                <input type="range" id="volumeSlider" min="0" max="100" value="80" aria-label="Volume">
+            </div>
+        </div>
+    </div>
+
+    <!-- File Name Display -->
+    <div id="fileName">No file selected</div>
+
+    <!-- GitHub Footer -->
+    <div id="footerInfo">
+        <a href="https://github.com/TLHA1232" target="_blank" rel="noopener noreferrer">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-label="GitHub Logo"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+            <span>TLHA1232</span>
+        </a>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const audioElement = document.getElementById('audioPlayer');
+        const canvas = document.getElementById('visualizerCanvas');
+        const canvasCtx = canvas.getContext('2d');
+        const uploadPrompt = document.getElementById('uploadPrompt');
+        const controlsContainer = document.getElementById('controlsContainer'); // Main container
+        const playPauseButton = document.getElementById('playPauseButton');
+        const playIcon = document.getElementById('playIcon');
+        const pauseIcon = document.getElementById('pauseIcon');
+        const volumeContainer = document.getElementById('volumeControlContainer');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const progressBar = document.getElementById('progressBar');
+        const currentTimeDisplay = document.getElementById('currentTime');
+        const totalDurationDisplay = document.getElementById('totalDuration');
+        const footerInfo = document.getElementById('footerInfo');
+
+        // --- Web Audio API Setup ---
+        let audioContext;
+        let analyser;
+        let source;
+        let dataArray;
+        let smoothedData;
+        let bufferLength;
+        let animationFrameId = null;
+        let isInitialized = false;
+        let bassAverage = 0;
+        let lastBassKickTime = 0;
+        let corePulseSize = 0;
+        let currentRotation = 0;
+        let particles = [];
+        let globalHueOffset = Math.random() * 360; // Start with a random color offset
+
+
+        // --- Visualization Constants ---
+        const FFT_SIZE = 512;
+        const SMOOTHING = 0.8;
+        let MIN_RADIUS = 35;
+        const MAX_RADIUS_INCREASE = 10;
+        const GLOW_BLUR = 18;
+        const GLOW_COLOR = 'rgba(120, 190, 255, 0.35)';
+        const BASE_LINE_WIDTH = 2.5;
+        const MAX_WIDTH_INCREASE = 2.0;
+        const LERP_FACTOR = 0.18;
+        const REFLECTION_ALPHA = 0.12;
+        const REFLECTION_OFFSET = 8;
+        const BASS_PULSE_FACTOR = 0.05;
+        const BASS_KICK_THRESHOLD = 1.15;
+        const BASS_KICK_COOLDOWN = 150;
+        const BASS_KICK_GLOW_AMOUNT = 5;
+        const CORE_KICK_INCREASE = 5;
+        const PARTICLE_COUNT = 50;
+        const PARTICLE_SPEED = 0.5;
+        const PARTICLE_FADE_SPEED = 0.015;
+        const PARTICLE_SPAWN_THRESHOLD = 1.08;
+        const PARTICLE_COLOR = 'rgba(184, 216, 248, 0.6)';
+        const HUE_SHIFT_SPEED = 0.03; // Degrees per frame for color cycling
+
+        // --- Canvas Setup ---
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+            canvasCtx.scale(dpr, dpr);
+        }
+        window.addEventListener('resize', resizeCanvas, false);
+        resizeCanvas();
+
+        // --- Audio Processing Setup ---
+        function setupAudioProcessing(audioElement) {
+            if (isInitialized) return;
+            console.log("Setting up Audio Processing...");
+            try {
+                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = FFT_SIZE;
+                analyser.smoothingTimeConstant = SMOOTHING;
+                analyser.minDecibels = -80;
+                analyser.maxDecibels = -10;
+                if (!source || source.mediaElement !== audioElement) {
+                    if(source) source.disconnect();
+                    source = audioContext.createMediaElementSource(audioElement);
+                }
+                source.connect(analyser);
+                analyser.connect(audioContext.destination);
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                smoothedData = new Array(bufferLength).fill(MIN_RADIUS);
+                particles = [];
+                for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(createParticle());
+                isInitialized = true;
+                 console.log("Audio Processing Initialized. Buffer Length:", bufferLength);
+            } catch (error) {
+                console.error("Error setting up Web Audio API:", error);
+                alert("Failed to initialize audio processing.");
+                isInitialized = false;
+             }
+        }
+
+         // --- Particle System (unchanged from previous) ---
+        function createParticle() {
+            const dpr = window.devicePixelRatio || 1;
+            const angle = Math.random() * Math.PI * 2;
+            const radius = MIN_RADIUS + Math.random() * 100 + 50; // Spawn further out
+            return {
+                x: canvas.width / 2 / dpr + Math.cos(angle) * radius,
+                y: canvas.height / 2 / dpr + Math.sin(angle) * radius,
+                vx: (Math.random() - 0.5) * PARTICLE_SPEED,
+                vy: (Math.random() - 0.5) * PARTICLE_SPEED,
+                alpha: Math.random() * 0.5 + 0.1,
+                size: Math.random() * 1.5 + 0.5,
+            };
+        }
+        function updateAndDrawParticles(bassRatio) {
+             const dpr = window.devicePixelRatio || 1;
+             const centerX = canvas.width / 2 / dpr;
+             const centerY = canvas.height / 2 / dpr;
+             canvasCtx.fillStyle = PARTICLE_COLOR;
+             particles.forEach(p => {
+                p.x += p.vx; p.y += p.vy; p.alpha -= PARTICLE_FADE_SPEED;
+                const dx = centerX - p.x; const dy = centerY - p.y;
+                p.vx += dx * 0.0001; p.vy += dy * 0.0001;
+                if (p.alpha > 0) {
+                    canvasCtx.globalAlpha = p.alpha; canvasCtx.beginPath();
+                    canvasCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2); canvasCtx.fill();
+                } else {
+                    if ((bassRatio > PARTICLE_SPAWN_THRESHOLD && Math.random() > 0.5) || Math.random() > 0.98) {
+                         Object.assign(p, createParticle());
+                     }
+                }
+            });
+            canvasCtx.globalAlpha = 1.0;
+        }
+
+        // --- Helper: Format Time ---
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+
+        // --- Drawing Function ---
+        function drawVisualizer() {
+            animationFrameId = requestAnimationFrame(drawVisualizer);
+            if (!isInitialized || !analyser) return;
+
+            analyser.getByteFrequencyData(dataArray);
+
+            const dpr = window.devicePixelRatio || 1;
+            const canvasWidth = canvas.width / dpr;
+            const canvasHeight = canvas.height / dpr;
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height); // Use raw canvas width/height
+
+            const centerX = canvasWidth / 2;
+            const centerY = canvasHeight / 2;
+            const maxPossibleHeight = Math.min(canvasWidth, canvasHeight) * 0.30;
+
+            // --- Calculate Bass Average & Kick ---
+            let bassSum = 0;
+            const bassEndIndex = Math.floor(bufferLength * 0.2);
+            for (let i = 0; i < bassEndIndex; i++) bassSum += dataArray[i];
+            const currentBassAvg = bassSum / bassEndIndex / 255;
+            bassAverage = bassAverage * 0.9 + currentBassAvg * 0.1;
+            const bassRatio = currentBassAvg / (bassAverage + 0.01);
+
+            // --- Background Pulse ---
+            const backgroundPulseAlpha = Math.min(0.15, (bassRatio - 1) * BASS_PULSE_FACTOR);
+            if (backgroundPulseAlpha > 0.01) {
+                canvasCtx.fillStyle = `rgba(120, 190, 255, ${backgroundPulseAlpha})`;
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height); // Fill raw canvas size
+            }
+
+            // --- Update & Draw Particles ---
+            updateAndDrawParticles(bassRatio);
+
+            // --- Bass Kick Detection ---
+            let isBassKick = false;
+            const now = performance.now();
+            if (bassRatio > BASS_KICK_THRESHOLD && (now - lastBassKickTime > BASS_KICK_COOLDOWN)) {
+                isBassKick = true;
+                lastBassKickTime = now;
+            }
+
+            // --- Calculate Core Pulse ---
+            const targetCorePulse = Math.min(MAX_RADIUS_INCREASE, bassAverage * MAX_RADIUS_INCREASE * 2);
+            corePulseSize += (targetCorePulse - corePulseSize) * 0.1;
+            let currentMinRadius = MIN_RADIUS + corePulseSize + (isBassKick ? CORE_KICK_INCREASE : 0);
+
+            // --- Draw Inner Core ---
+            canvasCtx.fillStyle = `rgba(100, 160, 220, ${0.1 + bassAverage * 0.3})`;
+            canvasCtx.beginPath();
+            canvasCtx.arc(centerX, centerY, currentMinRadius * 0.8, 0, Math.PI * 2);
+            canvasCtx.fill();
+
+            // --- Time-based Hue Shift ---
+            globalHueOffset = (globalHueOffset + HUE_SHIFT_SPEED) % 360;
+
+            // --- Draw Main Visualizer ---
+            canvasCtx.save();
+            const currentGlowBlur = GLOW_BLUR + (isBassKick ? BASS_KICK_GLOW_AMOUNT : 0);
+            canvasCtx.shadowBlur = currentGlowBlur;
+            canvasCtx.shadowColor = GLOW_COLOR;
+            canvasCtx.lineCap = 'round';
+
+            const relevantBufferLength = Math.floor(bufferLength * 0.65);
+            const angleIncrement = (Math.PI * 2) / relevantBufferLength;
+
+            currentRotation += bassAverage * 0.0001; // Keep subtle rotation
+            canvasCtx.translate(centerX, centerY);
+            canvasCtx.rotate(currentRotation);
+            canvasCtx.translate(-centerX, -centerY);
+
+            for (let i = 0; i < relevantBufferLength; i++) {
+                const targetPercent = dataArray[i] / 255;
+                const targetLength = currentMinRadius + targetPercent * maxPossibleHeight;
+                smoothedData[i] += (targetLength - smoothedData[i]) * LERP_FACTOR;
+                smoothedData[i] = Math.max(currentMinRadius, smoothedData[i]);
+                const currentLength = smoothedData[i];
+                const angle = angleIncrement * i;
+
+                const dynamicWidth = BASE_LINE_WIDTH + targetPercent * MAX_WIDTH_INCREASE;
+                canvasCtx.lineWidth = dynamicWidth;
+
+                const startX = centerX + Math.cos(angle) * currentMinRadius;
+                const startY = centerY + Math.sin(angle) * currentMinRadius;
+                const endX = centerX + Math.cos(angle) * currentLength;
+                const endY = centerY + Math.sin(angle) * currentLength;
+
+                // *** MORE COLORS ***
+                // Cycle through the full 360 hue range, offset by global shift
+                const hue = (globalHueOffset + (i / relevantBufferLength) * 360) % 360;
+                const saturation = 75 + targetPercent * 25; // Keep saturation dynamic but stable range
+                const lightness = 50 + targetPercent * 30; // Keep lightness dynamic
+                canvasCtx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(startX, startY);
+                canvasCtx.lineTo(endX, endY);
+                canvasCtx.stroke();
+            }
+            canvasCtx.restore();
+
+            // --- Draw Reflection ---
+            canvasCtx.save();
+            canvasCtx.translate(centerX, centerY + currentMinRadius + REFLECTION_OFFSET);
+            canvasCtx.scale(1, -1);
+            canvasCtx.globalAlpha = REFLECTION_ALPHA * (1 - bassAverage * 0.5);
+            canvasCtx.lineCap = 'round';
+
+            for (let i = 0; i < relevantBufferLength; i++) {
+                const currentLength = smoothedData[i];
+                const angle = angleIncrement * i + currentRotation; // Apply rotation manually
+                const targetPercent = dataArray[i] / 255; // For width/color
+                const dynamicWidth = BASE_LINE_WIDTH + targetPercent * MAX_WIDTH_INCREASE;
+                canvasCtx.lineWidth = dynamicWidth;
+
+                const startX = Math.cos(angle) * (currentMinRadius + 1);
+                const startY = Math.sin(angle) * (currentMinRadius + 1);
+                const endX = Math.cos(angle) * currentLength;
+                const endY = Math.sin(angle) * currentLength;
+
+                 // Match main color logic for reflection
+                 const hue = (globalHueOffset + (i / relevantBufferLength) * 360) % 360;
+                 const saturation = 75 + targetPercent * 25;
+                 const lightness = 50 + targetPercent * 30;
+                 canvasCtx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(startX, startY);
+                canvasCtx.lineTo(endX, endY);
+                canvasCtx.stroke();
+            }
+            canvasCtx.restore();
+        }
+
+        // --- UI Update Functions ---
+        function updatePlayPauseIcon(isPlaying) {
+            playIcon.style.display = isPlaying ? 'none' : 'block';
+            pauseIcon.style.display = isPlaying ? 'block' : 'none';
+            playPauseButton.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+        }
+
+        function showControls() {
+            controlsContainer.classList.add('visible'); // Show main container
+            fileNameDisplay.classList.add('visible');
+            footerInfo.classList.add('visible');
+        }
+         function hideControls() {
+             controlsContainer.classList.remove('visible'); // Hide main container
+             fileNameDisplay.classList.remove('visible');
+             footerInfo.classList.remove('visible');
+         }
+         hideControls(); // Initially hide
+
+        // --- Event Listener for File Input ---
+        fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file && file.type === 'audio/mpeg') {
+                console.log("File selected:", file.name);
+                fileNameDisplay.textContent = file.name;
+                uploadPrompt.classList.add('hidden');
+
+                if (audioElement.src && audioElement.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(audioElement.src);
+                }
+                const objectURL = URL.createObjectURL(file);
+                audioElement.src = objectURL;
+                audioElement.volume = volumeSlider.value / 100; // Set initial volume
+                updateVolumeSliderBackground(volumeSlider.value); // Update visual immediately
+                audioElement.load();
+
+                // Reset progress bar
+                progressBar.value = 0;
+                progressBar.disabled = true;
+                currentTimeDisplay.textContent = '0:00';
+                totalDurationDisplay.textContent = '0:00';
+                updateProgressBarBackground(0); // Reset visual
+
+
+                audioElement.addEventListener('loadedmetadata', () => {
+                    console.log("Audio metadata loaded.");
+                    const duration = audioElement.duration;
+                     if (!isNaN(duration) && isFinite(duration)) {
+                         totalDurationDisplay.textContent = formatTime(duration);
+                         progressBar.max = duration; // Set max based on actual duration
+                         progressBar.disabled = false; // Enable seeking
+                         console.log("Duration:", duration);
+                     } else {
+                         totalDurationDisplay.textContent = '--:--'; // Indicate unknown duration
+                         progressBar.disabled = true;
+                     }
+                }, { once: true });
+
+
+                audioElement.addEventListener('canplay', () => {
+                    console.log("Audio ready to play ('canplay').");
+                    showControls();
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().then(() => {
+                            if (!isInitialized) setupAudioProcessing(audioElement);
+                            resetVisualizerState(); // Reset state vars
+                            startVisualization();
+                            updatePlayPauseIcon(false);
+                        }).catch(e => console.error("Error resuming context:", e));
+                    } else {
+                        if (!isInitialized) setupAudioProcessing(audioElement);
+                         resetVisualizerState(); // Reset state vars
+                        startVisualization();
+                        updatePlayPauseIcon(false);
+                    }
+                }, { once: true });
+
+                audioElement.onerror = (e) => { /* ... error handling ... */
+                     console.error("Error loading audio:", e);
+                     alert(`Error loading audio file: ${file.name}.`);
+                     fileNameDisplay.textContent = "Error loading file";
+                     if (audioElement.src && audioElement.src.startsWith('blob:')) URL.revokeObjectURL(audioElement.src);
+                     audioElement.src = "";
+                     uploadPrompt.classList.remove('hidden');
+                     hideControls();
+                     stopVisualization();
+                     isInitialized = false;
+                     // Reset progress bar on error
+                     progressBar.value = 0; progressBar.disabled = true; progressBar.max = 100;
+                     currentTimeDisplay.textContent = '0:00'; totalDurationDisplay.textContent = '0:00';
+                     updateProgressBarBackground(0); updateVolumeSliderBackground(volumeSlider.value);
+                 };
+            } else if (file) {
+                 alert("Please select an MP3 audio file.");
+                 fileInput.value = '';
+            }
+        });
+
+        function resetVisualizerState() {
+            if(bufferLength) smoothedData = new Array(bufferLength).fill(MIN_RADIUS);
+            bassAverage = 0;
+            currentRotation = 0;
+            globalHueOffset = Math.random() * 360; // New random color offset for new track
+             console.log("Visualizer state reset.");
+        }
+
+        // --- Custom Control Event Listeners ---
+        playPauseButton.addEventListener('click', () => {
+             if (!isInitialized || !audioContext) { console.warn("Audio not ready."); return; }
+            if (audioContext.state === 'suspended') { audioContext.resume().then(togglePlay); }
+             else { togglePlay(); }
+        });
+        function togglePlay() {
+             if(!audioElement.src || audioElement.readyState < 2) { console.warn("Audio source not ready."); return; }
+             if (audioElement.paused) { audioElement.play().catch(e => console.error("Play error:", e)); }
+             else { audioElement.pause(); }
+        }
+
+        // --- Beautiful Volume Slider Update ---
+        function updateVolumeSliderBackground(value) {
+            volumeSlider.style.setProperty('--value', `${value}%`);
+        }
+        volumeSlider.addEventListener('input', (e) => {
+            const volume = e.target.value;
+            if(audioElement) audioElement.volume = volume / 100;
+            updateVolumeSliderBackground(volume); // Update visual fill
+        });
+
+         // --- Progress Bar Update & Seeking ---
+         function updateProgressBarBackground(percentage) {
+            progressBar.style.setProperty('--progress', `${percentage}%`);
+         }
+         audioElement.addEventListener('timeupdate', () => {
+            if (audioElement.duration && !isNaN(audioElement.duration) && isFinite(audioElement.duration)) {
+                const currentTime = audioElement.currentTime;
+                const duration = audioElement.duration;
+                const progressPercent = (currentTime / duration) * 100;
+                progressBar.value = currentTime; // Update value based on time
+                currentTimeDisplay.textContent = formatTime(currentTime);
+                updateProgressBarBackground(progressPercent); // Update visual fill
+            } else {
+                // Handle cases like live streams or unknown duration
+                progressBar.value = 0;
+                updateProgressBarBackground(0);
+            }
+         });
+         progressBar.addEventListener('input', () => {
+            if(audioElement.seekable && audioElement.duration && isFinite(audioElement.duration)){
+                const seekTime = progressBar.value; // Value is now directly time
+                audioElement.currentTime = seekTime;
+                // Update visual immediately while dragging
+                const progressPercent = (seekTime / audioElement.duration) * 100;
+                updateProgressBarBackground(progressPercent);
+                currentTimeDisplay.textContent = formatTime(seekTime);
+            }
+         });
+          // Optional: Use 'change' event for final seek after mouse up / keyboard change
+         // progressBar.addEventListener('change', () => { /* ... potentially redundant if input handles well ... */ });
+
+
+        // --- Audio Element Event Listeners (Sync UI) ---
+        audioElement.addEventListener('play', () => { updatePlayPauseIcon(true); startVisualization(); });
+        audioElement.addEventListener('pause', () => { updatePlayPauseIcon(false); });
+        audioElement.addEventListener('ended', () => {
+            updatePlayPauseIcon(false);
+            stopVisualization();
+            // Reset progress to start visually
+            progressBar.value = 0;
+            currentTimeDisplay.textContent = '0:00';
+            updateProgressBarBackground(0);
+         });
+        audioElement.addEventListener('volumechange', () => {
+            if(audioElement) {
+                 const newVol = Math.round(audioElement.volume * 100);
+                 volumeSlider.value = newVol;
+                 updateVolumeSliderBackground(newVol); // Sync visual fill
+             }
+        });
+
+       // --- Start/Stop Visualization Helpers ---
+        function startVisualization() {
+             if (isInitialized && animationFrameId === null) {
+                 console.log("Starting visualization loop.");
+                 drawVisualizer();
+             }
+        }
+        function stopVisualization() {
+            if (animationFrameId !== null) {
+                console.log("Stopping visualization loop.");
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+
+         // --- Drag and Drop Functionality (Minor updates for new progress bar state) ---
+         const body = document.body;
+         body.addEventListener('dragenter', (e) => { /* ... */ e.preventDefault(); if (!uploadPrompt.classList.contains('hidden')) { /* Highlight prompt */ } });
+         body.addEventListener('dragover', (e) => { /* ... */ e.preventDefault(); });
+         body.addEventListener('dragleave', (e) => { /* ... */ if (e.relatedTarget === null || !body.contains(e.relatedTarget)) { if (!uploadPrompt.classList.contains('hidden')) { /* Un-highlight prompt */ } } });
+         body.addEventListener('drop', (event) => {
+             event.preventDefault();
+             if (!uploadPrompt.classList.contains('hidden')) { /* Reset prompt style */ }
+             let file = null;
+             try {
+                 if (event.dataTransfer.items && event.dataTransfer.items[0]?.kind === 'file') { file = event.dataTransfer.items[0].getAsFile(); }
+                 else if (event.dataTransfer.files?.length > 0) { file = event.dataTransfer.files[0]; }
+             } catch (e) { console.error("Error accessing dropped file:", e); alert("Could not access the dropped file."); return; }
+
+             if (file && file.type === 'audio/mpeg') {
+                 console.log('Dropped MP3 file:', file.name);
+                 const dataTransfer = new DataTransfer();
+                 dataTransfer.items.add(file);
+                 fileInput.files = dataTransfer.files;
+                 fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+             } else if (file) {
+                 alert("Please drop an MP3 file (dropped "+file.type+").");
+             } else {
+                 alert("Could not read dropped file.");
+             }
+         });
+
+        // --- Initial UI State ---
+        updateVolumeSliderBackground(volumeSlider.value); // Set initial volume visual
+        updateProgressBarBackground(0); // Set initial progress visual
+
+    </script>
+</body>
+</html>
