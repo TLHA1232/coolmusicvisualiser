@@ -69,7 +69,7 @@ Several visualization parameters can be adjusted within the JavaScript code to f
 *   **`PARTICLE_FADE_SPEED`:** The rate at which particles fade out.
 *   **`HUE_SHIFT_SPEED`:** The speed at which the color hue cycles.
 
-These values are found within the `<script>` section of `musicvisualiser2.0.html`.  Experiment with these values to create your own unique visual styles.
+These values are found within the `<script>` section of `THISISIT.html`.  Experiment with these values to create your own unique visual styles.
 
 ## Future Enhancements
 
