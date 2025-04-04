@@ -2,7 +2,7 @@
 
 A dynamic and visually engaging audio visualizer built with HTML, CSS, and JavaScript, leveraging the Web Audio API.  This project provides a compelling way to experience music by transforming audio frequencies into captivating visual patterns.
 
-[**Live Demo**](replace_with_your_deployed_link)  *(Replace this with the actual link to your deployed visualizer)*
+
 
 ## Features
 
